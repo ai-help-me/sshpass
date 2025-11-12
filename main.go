@@ -198,22 +198,12 @@ func getPassword() (string, error) {
 		return password, nil
 	}
 
-	// Default to stdin
+	// No password source specified - return empty password
+	// This allows the command to run normally without sshpass intervention
 	if verbose {
-		fmt.Fprintf(os.Stderr, "sshpass: Reading password from stdin\n")
+		fmt.Fprintf(os.Stderr, "sshpass: No password source specified, running command directly\n")
 	}
-	fmt.Fprint(os.Stderr, "Password: ")
-
-	// Use terminal to read password without echo
-	// Fallback to normal reading if terminal operations fail
-	scanner := bufio.NewScanner(os.Stdin)
-	if scanner.Scan() {
-		return scanner.Text(), nil
-	}
-	if scanner.Err() != nil {
-		return "", fmt.Errorf("failed to read password: %v", scanner.Err())
-	}
-	return "", fmt.Errorf("no password entered")
+	return "", nil
 }
 
 func main() {
@@ -278,6 +268,38 @@ func main() {
 		os.Exit(1)
 	}
 
+	// If no password was provided, run command directly without password intervention
+	if password == "" {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "sshpass: No password provided, running command directly\n")
+		}
+		
+		// Create and run command directly without PTY and password monitoring
+		cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		
+		if err := cmd.Run(); err != nil {
+			if execErr, ok := err.(*exec.Error); ok && execErr.Err == exec.ErrNotFound {
+				// Command not found - match C version behavior
+				fmt.Fprintf(os.Stderr, "SSHPASS: Failed to run command: No such file or directory\n")
+				os.Exit(3) // Match C version exit code
+			}
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				// 命令退出但返回非零状态码
+				if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+					os.Exit(status.ExitStatus())
+				}
+			}
+			if verbose {
+				fmt.Fprintf(os.Stderr, "sshpass: command failed: %v\n", err)
+			}
+			os.Exit(1)
+		}
+		return
+	}
+
 	if verbose {
 		fmt.Fprintf(os.Stderr, "sshpass: Starting command: %s\n", strings.Join(cmdArgs, " "))
 	}
@@ -293,6 +315,11 @@ func main() {
 	// Start the command with a pty
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
+		if execErr, ok := err.(*exec.Error); ok && execErr.Err == exec.ErrNotFound {
+			// Command not found - match C version behavior
+			fmt.Fprintf(os.Stderr, "SSHPASS: Failed to run command: No such file or directory\n")
+			os.Exit(3) // Match C version exit code
+		}
 		fmt.Fprintf(os.Stderr, "sshpass: Failed to start command with pty: %v\n", err)
 		os.Exit(1)
 	}
