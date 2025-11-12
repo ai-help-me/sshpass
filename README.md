@@ -13,8 +13,9 @@
 ## 安装
 
 ```bash
-go build -o sshpass main.go
+go install github.com/ai-help-me/sshpass@latest
 ```
+
 
 ## 使用方法
 
