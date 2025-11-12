@@ -1,89 +1,88 @@
-# sshpass - Go 重写版本
+# sshpass - Go Rewrite Version
 
-这是 sshpass 工具的 Go 语言重写版本，提供与原版本完全兼容的命令行界面和功能。
+This is a Go language rewrite of the sshpass tool, providing full compatibility with the original version's command-line interface and functionality.
 
-## 功能特性
+## Features
 
-- ✅ 与原版 sshpass 完全兼容的命令行选项
-- ✅ 所有密码输入方式（-f, -d, -p, -e, 默认 stdin）
-- ✅ 详细的错误处理和帮助信息
-- ✅ 跨平台支持（Windows, macOS, Linux）
-- ✅ 无需外部依赖（纯 Go 实现）
+- ✅ Fully compatible command-line options with original sshpass
+- ✅ All password input methods (-f, -d, -p, -e, default stdin)
+- ✅ Detailed error handling and help information
+- ✅ Cross-platform support (Windows, macOS, Linux)
+- ✅ No external dependencies (pure Go implementation)
 
-## 安装
+## Installation
 
 ```bash
 go install github.com/ai-help-me/sshpass@latest
 ```
 
+## Usage
 
-## 使用方法
-
-### 基本语法
+### Basic Syntax
 
 ```bash
 sshpass [-f|-d|-p|-e] [-hV] command parameters
 ```
 
-### 选项说明
+### Options
 
-- `-f filename` - 从文件读取密码
-- `-d number` - 使用指定的文件描述符获取密码  
-- `-p password` - 直接提供密码参数（不安全）
-- `-e` - 从环境变量 `SSHPASS` 获取密码
-- `-P prompt` - 设置密码提示字符串（默认：password）
-- `-v` - 详细输出模式
-- `-h` - 显示帮助信息
-- `-V` - 显示版本信息
+- `-f filename` - Read password from file
+- `-d number` - Use specified file descriptor for password
+- `-p password` - Provide password directly (insecure)
+- `-e` - Get password from environment variable `SSHPASS`
+- `-P prompt` - Set password prompt string (default: password)
+- `-v` - Verbose output mode
+- `-h` - Display help information
+- `-V` - Display version information
 
-### 使用示例
+### Examples
 
-#### 1. 从命令行提供密码
+#### 1. Provide password from command line
 ```bash
 sshpass -p mypassword ssh user@host
 ```
 
-#### 2. 从环境变量获取密码
+#### 2. Get password from environment variable
 ```bash
 export SSHPASS=mypassword
 sshpass -e ssh user@host
 ```
 
-#### 3. 从文件读取密码
+#### 3. Read password from file
 ```bash
 echo "mypassword" > pass.txt
 sshpass -f pass.txt ssh user@host
 ```
 
-#### 4. 使用详细模式
+#### 4. Use verbose mode
 ```bash
 sshpass -v -p mypassword ssh user@host
 ```
 
-#### 5. 执行远程命令
+#### 5. Execute remote command
 ```bash
 sshpass -p mypassword ssh user@host "ls -la"
 ```
 
-#### 6. 使用 scp 传输文件
+#### 6. Use scp to transfer files
 ```bash
 sshpass -p mypassword scp file.txt user@host:/remote/path/
 ```
 
-## 与原版兼容性
+## Compatibility with Original Version
 
-本实现与原版 sshpass 完全兼容，所有命令行选项和行为保持一致。可以无缝替换现有的 sshpass 使用场景。
+This implementation is fully compatible with the original sshpass. All command-line options and behaviors remain consistent, allowing seamless replacement of existing sshpass usage scenarios.
 
-## 注意事项
+## Security Notes
 
-- 在命令行中直接提供密码（-p 选项）是不安全的，因为密码会出现在进程列表中
-- 建议使用文件（-f）或环境变量（-e）方式提供密码
-- 密码文件应该设置适当的权限（如 600）以保护密码安全
+- Providing password directly in command line (-p option) is insecure as it appears in process listing
+- Recommended to use file (-f) or environment variable (-e) methods for password input
+- Password files should have appropriate permissions (e.g., 600) to protect password security
 
-## 构建要求
+## Build Requirements
 
-- Go 1.16 或更高版本
+- Go 1.16 or higher
 
-## 许可证
+## License
 
-与原版本相同，遵循 GNU General Public License v2 或更高版本。
+Same as the original version, licensed under GNU General Public License v2 or later.
