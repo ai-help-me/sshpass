@@ -273,13 +273,13 @@ func main() {
 		if verbose {
 			fmt.Fprintf(os.Stderr, "sshpass: No password provided, running command directly\n")
 		}
-		
+
 		// Create and run command directly without PTY and password monitoring
 		cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		
+
 		if err := cmd.Run(); err != nil {
 			if execErr, ok := err.(*exec.Error); ok && execErr.Err == exec.ErrNotFound {
 				// Command not found - match C version behavior
@@ -358,7 +358,15 @@ func main() {
 	var firsttime bool = true
 	var terminate bool // 是否应该终止
 
+	// 使用 channel 来协调 goroutine 退出
+	cmdDone := make(chan bool, 1)
+	readDone := make(chan bool, 1)
+
+	// 启动读取 PTY 输出的 goroutine
 	go func() {
+		defer func() {
+			readDone <- true
+		}()
 		buf := make([]byte, 256) // 使用与C版本相同的缓冲区大小
 		for !terminate {
 			// 使用非阻塞读取，避免永远阻塞
@@ -366,13 +374,20 @@ func main() {
 			n, err := ptmx.Read(buf)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					// 超时，继续循环
-					continue
+					// 超时，检查命令是否已完成
+					select {
+					case <-cmdDone:
+						// 命令已完成，退出循环
+						return
+					default:
+						// 继续循环
+						continue
+					}
 				}
 				if err != io.EOF && verbose {
 					fmt.Fprintf(os.Stderr, "sshpass: error reading from pty: %v\n", err)
 				}
-				break
+				return
 			}
 
 			// 将读取的内容转换为字符串（不添加null终止符，保持与C版本一致）
@@ -428,22 +443,85 @@ func main() {
 	}()
 
 	// 在发送密码后，将stdin连接到PTY
+	stdinDone := make(chan bool, 1)
 	go func() {
+		defer func() {
+			stdinDone <- true
+		}()
 		// 等待一小段时间确保密码已经发送
 		time.Sleep(100 * time.Millisecond)
-		io.Copy(ptmx, os.Stdin)
+
+		// 使用带超时的复制，避免在命令完成后一直阻塞
+		done := make(chan error, 1)
+		copyStopped := make(chan bool, 1)
+		go func() {
+			_, err := io.Copy(ptmx, os.Stdin)
+			done <- err
+			copyStopped <- true
+		}()
+
+		select {
+		case <-cmdDone:
+			// 命令已完成，等待 io.Copy 退出（最多等待 100ms）
+			// 关闭 PTY 会让 io.Copy 因为写入失败而退出
+			select {
+			case <-copyStopped:
+				// io.Copy 已退出
+			case <-time.After(100 * time.Millisecond):
+				// 超时，io.Copy 可能还在运行，但关闭 PTY 会让它退出
+			}
+			return
+		case err := <-done:
+			// io.Copy 正常完成或出错
+			if err != nil && verbose {
+				fmt.Fprintf(os.Stderr, "sshpass: stdin copy error: %v\n", err)
+			}
+		}
 	}()
 
-	// 等待命令完成 - 不转发stdin，完全依赖shell的管道机制
-	if err := cmd.Wait(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+	// 等待命令完成
+	var waitErr error
+	go func() {
+		waitErr = cmd.Wait()
+		cmdDone <- true
+	}()
+
+	// 等待命令完成
+	<-cmdDone
+
+	// 命令完成后，等待读取 goroutine 完成（最多等待 2 秒）
+	// 这确保所有输出都被读取和写入
+	select {
+	case <-readDone:
+		// 读取 goroutine 已完成
+	case <-time.After(2 * time.Second):
+		if verbose {
+			fmt.Fprintf(os.Stderr, "sshpass: timeout waiting for read goroutine\n")
+		}
+	}
+
+	// 关闭 PTY，这会触发 stdin 复制 goroutine 退出
+	ptmx.Close()
+
+	// 等待 stdin 复制 goroutine 完成（最多等待 500ms）
+	select {
+	case <-stdinDone:
+		// stdin 复制 goroutine 已完成
+	case <-time.After(500 * time.Millisecond):
+		if verbose {
+			fmt.Fprintf(os.Stderr, "sshpass: timeout waiting for stdin copy goroutine\n")
+		}
+	}
+
+	if waitErr != nil {
+		if exitErr, ok := waitErr.(*exec.ExitError); ok {
 			// 命令退出但返回非零状态码
 			if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
 				os.Exit(status.ExitStatus())
 			}
 		}
 		if verbose {
-			fmt.Fprintf(os.Stderr, "sshpass: command failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "sshpass: command failed: %v\n", waitErr)
 		}
 		os.Exit(1)
 	}
